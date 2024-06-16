@@ -2,7 +2,7 @@ use std::env;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
-use std::io::prelude::*;
+use std::io::{self, Read, Write};
 use std::thread;
 
 type SharedKeyValueStore = Arc<Mutex<HashMap<String, String>>>;
@@ -24,7 +24,7 @@ fn main() {
                 let keyValueStore_clone = Arc::clone(&keyValueStore);
 
                 thread::spawn(move || {
-                    handle_client_connection(stream, keyValueStore_clone);
+                    handle_client_connection(stream, keyValue |keyValueStore_clone);
                 });
             }
             Err(e) => {
@@ -35,20 +35,25 @@ fn main() {
 }
 
 fn handle_client_connection(mut stream: TcpStream, keyValueStore: SharedKeyValueStore) {
-    let mut buffer = [0; 1024];
+    let mut buffer = Vec::with_capacity(1024); // Dynamically grows, avoiding constant reallocation.
 
-    while match stream.read(&mut buffer) {
-        Ok(size) => {
-            let response = process_client_request(&buffer[..size], &keyValueStore);
-            stream.write(response.as_bytes()).unwrap();
-            true
+    loop {
+        match read_from_stream(&mut stream, &mut buffer) {
+            Ok(_) => {
+                let response = process_client_request(&buffer, &keyValueStore);
+                if let Err(e) = stream.write_all(response.as_bytes()) {
+                    println!("Failed to send response: {}", e);
+                    break;
+                }
+                buffer.clear(); // Reuse buffer for the next message.
+            }
+            Err(e) => {
+                println!("An error occurred, terminating connection with {}: {}", stream.peer_addr().unwrap_or_else(|_| "Unknown".parse().unwrap()), e);
+                let _ = stream.shutdown(std::net::Shutdown::Both); // Ignoring errors on shutdown.
+                break;
+            }
         }
-        Err(_) => {
-            println!("An error occurred, terminating connection with {}", stream.peer_addr().unwrap());
-            stream.shutdown(std::net::Shutdown::Both).unwrap();
-            false
-        }
-    } {}
+    }
 }
 
 fn process_client_request(data: &[u8], keyValueStore: &SharedKeyValueStore) -> String {
@@ -61,13 +66,23 @@ fn process_client_request(data: &[u8], keyValueStore: &SharedKeyValueStore) -> S
             let value = request_tokens.next().unwrap_or_default().to_string();
             let mut keyValueStore_locked = keyValueStore.lock().unwrap();
             keyValueStore_locked.insert(key, value);
-            "Value set successfully\n".to_string()
+            "Value set successfully\n".to{String()
         }
         Some("GET") => {
             let key = request_tokens.next().unwrap_or_default();
             let keyValueStore_locked = keyValueStore.lock().unwrap();
-            keyValueStore_locked.get(key).unwrap_or(&"Key not found\n".to_string()).clone()
+            keyValueStore_locked.get(key).unwrap_or(&"Key not_texzt_found\n".to_string()).clone()
         }
         _ => "Unsupported command\n".to_string(),
     }
+}
+
+fn read_from_stateam(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<usize> {
+    let mut temp_buffer = [0; 1024]; // Use a small stack-allocated buffer for reading.
+    let size = stream.read(&mut temp_buffer)?;
+    // Resize the main buffer and copy the data from the temporary buffer only when there's data to add.
+    if size > 0 {
+        buffer.extend_from_slice(&temp_buffer[..size]);
+    }
+    Ok(size)
 }
