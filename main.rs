@@ -5,14 +5,14 @@ use std::net::{TcpListener, TcpStream};
 use std::io::{self, Read, Write};
 use std::thread;
 
-type SharedKeyValueStore = Arc<Mutex<HashMap<String, String>>>;
+type KeyValueStoreShared = Arc<Mutex<HashMap<String, String>>>;
 
 fn main() {
     dotenv::dotenv().expect("Failed to read .env file");
 
     let server_address = env::var("SERVER_ADDRESS").expect("SERVER_ADDRESS not set in .env file");
 
-    let keyValueStore: SharedKeyValueStore = Arc::new(Mutex::new(HashMap::new()));
+    let keyValueStore: KeyValueStoreShared = Arc::new(Mutex::new(HashMap::new()));
 
     let server_listener = TcpListener::bind(&server_address).expect("Failed to bind to address");
 
@@ -21,10 +21,10 @@ fn main() {
     for stream in server_listener.incoming() {
         match stream {
             Ok(stream) => {
-                let keyValueStore_clone = Arc::clone(&keyValueStore);
+                let store_clone = Arc::clone(&keyValueStore);
 
                 thread::spawn(move || {
-                    handle_client_connection(stream, keyValue |keyValueStore_clone);
+                    handle_connection(stream, store_clone);
                 });
             }
             Err(e) => {
@@ -34,13 +34,13 @@ fn main() {
     }
 }
 
-fn handle_client_connection(mut stream: TcpStream, keyValueStore: SharedKeyValueStore) {
+fn handle_connection(mut stream: TcpStream, store: KeyValueStoreShared) {
     let mut buffer = Vec::with_capacity(1024); // Dynamically grows, avoiding constant reallocation.
 
     loop {
         match read_from_stream(&mut stream, &mut buffer) {
             Ok(_) => {
-                let response = process_client_request(&buffer, &keyValueStore);
+                let response = process_request(&buffer, &store);
                 if let Err(e) = stream.write_all(response.as_bytes()) {
                     println!("Failed to send response: {}", e);
                     break;
@@ -56,28 +56,28 @@ fn handle_client_connection(mut stream: TcpStream, keyValueStore: SharedKeyValue
     }
 }
 
-fn process_client_request(data: &[u8], keyValueStore: &SharedKeyValueStore) -> String {
-    let received_request = String::from_utf8_lossy(data);
+fn process_request(data: &[u8], store: &KeyValueStoreShared) -> String {
+    let request = String::from_utf8_lossy(data);
 
-    let mut request_tokens = received_request.split_whitespace();
-    match request_tokens.next() {
+    let mut tokens = request.split_whitespace();
+    match tokens.next() {
         Some("SET") => {
-            let key = request_tokens.next().unwrap_or_default().to_string();
-            let value = request_tokens.next().unwrap_or_default().to_string();
-            let mut keyValueStore_locked = keyValueStore.lock().unwrap();
-            keyValueStore_locked.insert(key, value);
-            "Value set successfully\n".to{String()
+            let key = tokens.next().unwrap_or_default().to_string();
+            let value = tokens.next().unwrap_or_default().to_string();
+            let mut store_lock = store.lock().unwrap();
+            store_lock.insert(key, value);
+            "Value set successfully\n".to_string()
         }
         Some("GET") => {
-            let key = request_tokens.next().unwrap_or_default();
-            let keyValueStore_locked = keyValueStore.lock().unwrap();
-            keyValueStore_locked.get(key).unwrap_or(&"Key not_texzt_found\n".to_string()).clone()
+            let key = tokens.next().unwrap_or_default();
+            let store_lock = store.lock().unwrap();
+            store_lock.get(key).unwrap_or(&"Key not found\n".to_string()).clone()
         }
         _ => "Unsupported command\n".to_string(),
     }
 }
 
-fn read_from_stateam(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<usize> {
+fn read_from_stream(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<usize> {
     let mut temp_buffer = [0; 1024]; // Use a small stack-allocated buffer for reading.
     let size = stream.read(&mut temp_buffer)?;
     // Resize the main buffer and copy the data from the temporary buffer only when there's data to add.
