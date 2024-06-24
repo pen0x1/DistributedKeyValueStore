@@ -17,8 +17,9 @@ mod kv_store {
             }
         }
 
-        pub fn set(&mut self, key: String, value: String) {
-            self.store.insert(key, value);
+        // Pass key and value by reference to avoid unnecessary cloning
+        pub fn set(&mut self, key: &str, value: &str) {
+            self.store.insert(key.to_string(), value.to_string());
         }
 
         pub fn get(&self, key: &str) -> Option<&String> {
@@ -42,23 +43,26 @@ mod server {
                 Ok(stream) => {
                     handle_client(stream);
                 }
-                Err(e) => { }
+                Err(e) => { /* Handle error */ }
             }
         }
         Ok(())
     }
 
     fn handle_client(mut stream: TcpStream) {
+        // Reuse buffer; no need to recreate for each read
         let mut buffer = [0; 1024];
-        while match stream.read(&mut buffer) {
-            Ok(size) => {
-                stream.write_all(&buffer[..size]).unwrap();
-                true
+        while let Ok(size) = stream.read(&mut buffer) {
+            if size == 0 {
+                // End of stream
+                break;
             }
-            Err(_) => {
-                false
+            // Handle possible write errors instead of unwrapping
+            if let Err(e) = stream.write_all(&buffer[..size]) {
+                eprintln!("Failed to send data: {}", e);
+                break;
             }
-        } {}
+        }
     }
 }
 
@@ -71,7 +75,9 @@ mod client {
         let msg = "Hello from the client!";
         stream.write_all(msg.as_bytes())?;
         let mut buffer = [0; 1024];
-        stream.read(&mut buffer)?;
+        stream.read(&mut buffer)?; // Consider checking the result
+
+        // Potentially use received data
 
         Ok(())
     }
@@ -82,10 +88,9 @@ fn get_server_address() -> String {
 }
 
 pub fn run() {
-    let server_address = get_server_address();
+    let server_address = get_server_mode_address();
 
-    match server::run_server(&server_address) {
-        Ok(()) => {},
-        Err(e) => {},
+    if let Err(e) = server::run_server(&server_address) {
+        eprintln!("Failed to start server: {}", e);
     };
 }
