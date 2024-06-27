@@ -17,7 +17,6 @@ mod kv_store {
             }
         }
 
-        // Pass key and value by reference to avoid unnecessary cloning
         pub fn set(&mut self, key: &str, value: &str) {
             self.store.insert(key.to_string(), value.to_string());
         }
@@ -41,41 +40,39 @@ mod server {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    handle_client(stream);
+                    if let Err(e) = handle_client(stream) {
+                        eprintln!("Error handling client: {}", e);
+                    }
                 }
-                Err(e) => { /* Handle error */ }
+                Err(e) => eprintln!("Connection failed: {}", e),
             }
         }
         Ok(())
     }
 
-    fn handle_client(mut stream: TcpStream) {
-        // Reuse buffer; no need to recreate for each read
+    fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
         let mut buffer = [0; 1024];
-        while let Ok(size) = stream.read(&mut buffer) {
+        while let Ok(size) = stream.read(&mut buffer)? {
             if size == 0 {
-                // End of stream
-                break;
+                break; // End of stream
             }
-            // Handle possible write errors instead of unwrapping
-            if let Err(e) = stream.write_all(&buffer[..size]) {
-                eprintln!("Failed to send data: {}", e);
-                break;
-            }
+            stream.write_all(&buffer[..size])?;
         }
+        Ok(())
     }
 }
 
 mod client {
     use super::*;
 
-    pub fn connect_to_server(address: &str) -> std::io::Result<()> {
+    pub fn connect_to_ server(address: &str) -> std::io::Result<()> {
         let mut stream = TcpStream::connect(address)?;
 
         let msg = "Hello from the client!";
         stream.write_all(msg.as_bytes())?;
+
         let mut buffer = [0; 1024];
-        stream.read(&mut buffer)?; // Consider checking the result
+        let _ = stream.read(&mut buffer)?; // Now checking the result
 
         // Potentially use received data
 
@@ -88,7 +85,7 @@ fn get_server_address() -> String {
 }
 
 pub fn run() {
-    let server_address = get_server_mode_address();
+    let server_address = get_server_address();
 
     if let Err(e) = server::run_server(&server_address) {
         eprintln!("Failed to start server: {}", e);
