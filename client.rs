@@ -18,7 +18,8 @@ struct KeyValueResponse {
 }
 
 fn main() -> io::Result<()> {
-    dotenv::dotenv().ok();
+    dotenv::dotenv().expect("Failed to load .env file");
+  
     let server_address = env::var("KV_STORE_SERVER_ADDRESS")
         .unwrap_or_else(|_| "127.0.0.1:8080".to_string());
 
@@ -86,6 +87,6 @@ fn main() -> io::Result<()> {
             }
         };
 
-        println!("Response: {}", server_json::Response);
+        println!("Response: {}", server_response);
     }
 }
