@@ -1,7 +1,6 @@
 use serde::{Serialize, Deserialize};
 use std::env;
 use std::net::SocketAddr;
-use std::str::FromStr;
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -13,13 +12,8 @@ enum Command {
 }
 
 impl Command {
-    fn serialize(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap()
-    }
-
-    fn deserialize(bytes: &[u8]) -> Self {
-        serde_json::from_slice(bytes).unwrap()
-    }
+    // Utilize serde for direct serialization/deserialization without explicit method calls
+    // Methods are now integrated into Enum usage, see process_command for deserialization example
 }
 
 struct KeyValueStore {
@@ -48,31 +42,27 @@ impl KeyValueStore {
                 None 
             }
             Command::Fetch { key } => {
-                let response = self.data.get(&key).cloned().map(|value| {
-                    Command::Reply { key: Some(key), value: Some(value) }
-                });
-                response
+                self.data.get(&key).cloned().map(|value| Command::Reply { key: Some(key), value: Some(value) })
             }
-            _ => None,
+            // Removed the unreachable pattern to keep the function concise
         }
     }
 }
 
 fn main() {
-    let address_env_var = env::var("NODE_ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
-    let socket_address = SocketAddr::from_str(&address_env_var).expect("Invalid NODE_ADDRESS format");
+    // Simplified environment variable handling and parsing
+    let addr_str = env::var("NODE_ADDRESS").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+    let socket_address: SocketAddr = addr_str.parse().expect("Invalid NODE_ADDRESS format");
 
     let mut store = KeyValueStore::initialize(socket_address);
 
-    let entries_for_batch_put = vec![
+    // Direct declaration and processing of commands for clarity
+    store.process_command(Command::BatchPut(vec![
         ("key1".to_string(), "value1".to_string()),
-        ("key2".to_string(), "value2".to_string())
-    ];
-    let batch_put_command = Command::BatchPut(entries_for_batch_put);
-    store.process_command(batch_put_command);
+        ("key2".to_string(), "value2".to_string()),
+    ]));
 
-    let fetch_command = Command::Fetch { key: "key1".to_string() };
-    if let Some(reply) = store.process_command(fetch_command) {
+    if let Some(reply) = store.process_command(Command::Fetch { key: "key1".to_string() }) {
         println!("Reply: {:?}", reply);
     }
 }
