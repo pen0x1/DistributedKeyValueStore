@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use std::env;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
-use std::net::{TcpListener, TcpStream, SocketAddr};
+use std::net::TcpListener;
+use std::env;
 
 struct Node {
     id: Uuid,
     address: String,
     data: Arc<Mutex<HashMap<String, String>>>,
+    cache: Arc<Mutex<HashMap<String, String>>>, 
 }
 
 impl Node {
@@ -16,6 +17,7 @@ impl Node {
             id,
             address,
             data: Arc::new(Mutex::new(HashMap::new())),
+            cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -24,7 +26,7 @@ impl Node {
     }
 
     fn join(&mut self, other_node: &Node) {
-        println!("Joining node with address: {}", &other_node.address);
+        println!("Joining node with address: {}", other_node.address);
     }
 
     fn leave(&mut self) {
@@ -44,6 +46,16 @@ impl Node {
         data.get(key).cloned()
     }
 
+    fn expensive_computation(&self, key: &str, value: &str) -> String {
+        let mut cache = self.cache.lock().unwrap();
+        if let Some(cached_result) = cache.get(key) {
+            return cached_result.clone();
+        }
+        let expensive_result = format!("ExpensiveResultOf_{}", value);
+        cache.insert(key.to_string(), expensive_result.clone());
+        expensive_result
+    }
+
     fn start_server(&self) {
         let listener = TcpListener::bind(&self.address).expect("Could not bind to address");
         println!("Node server running on {}", self.address);
@@ -60,7 +72,7 @@ impl Node {
         }
     }
 
-    fn handle_connection(&self, _stream: TcpStream) {
+    fn handle_connection(&self, _stream: TcpListener) {
         println!("Got connection from a node!");
     }
 }
@@ -70,8 +82,10 @@ fn main() {
     let node_address = env::var("NODE_ADDRESS").expect("NODE_ADDRESS must be set");
     
     let node_id = Uuid::new_v4();
-    let node = Node::new(node_id, node_address.clone());
+    let mut node = Node::new(node_id, node_address.clone());
 
+    let _result = node.expensive_computation("example_key", "example_value");
+    
     let _discovered_nodes = node.discover();
     node.handle_task("Example Task");
 
